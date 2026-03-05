@@ -2,10 +2,54 @@ param(
   [string]$Repo = "loongphy/codex-auth",
   [string]$Version = "latest",
   [string]$InstallDir = "$env:LOCALAPPDATA\codex-auth\bin",
-  [switch]$AddToPath
+  [switch]$AddToPath,
+  [switch]$NoAddToPath
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($AddToPath -and $NoAddToPath) {
+  throw "Cannot use -AddToPath and -NoAddToPath together."
+}
+
+function Write-Info {
+  param([string]$Message)
+  Write-Host $Message -ForegroundColor Cyan
+}
+
+function Write-Success {
+  param([string]$Message)
+  Write-Host $Message -ForegroundColor Green
+}
+
+function Write-Warn {
+  param([string]$Message)
+  Write-Host $Message -ForegroundColor Yellow
+}
+
+function Normalize-PathEntry {
+  param([string]$PathEntry)
+  if ([string]::IsNullOrWhiteSpace($PathEntry)) {
+    return ""
+  }
+  $normalized = $PathEntry.Trim()
+  if ($normalized.Length -gt 3) {
+    $normalized = $normalized.TrimEnd('\')
+  }
+  return $normalized
+}
+
+function Get-PathSegments {
+  param([string]$PathValue)
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    return @()
+  }
+  return @(
+    $PathValue -split ';' |
+      ForEach-Object { Normalize-PathEntry $_ } |
+      Where-Object { $_ -ne "" }
+  )
+}
 
 function Detect-Asset {
   $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
@@ -33,7 +77,7 @@ $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-auth-" + [System.
 New-Item -Path $TempDir -ItemType Directory -Force | Out-Null
 try {
   $ArchivePath = Join-Path $TempDir $Asset
-  Write-Host "Downloading $DownloadUrl"
+  Write-Info "Downloading $DownloadUrl"
   Invoke-WebRequest -Uri $DownloadUrl -OutFile $ArchivePath
 
   Expand-Archive -Path $ArchivePath -DestinationPath $TempDir -Force
@@ -46,26 +90,33 @@ try {
   $DestBin = Join-Path $InstallDir "codex-auth.exe"
   Copy-Item -Path $SourceBin -Destination $DestBin -Force
 
-  Write-Host "Installed: $DestBin"
+  Write-Success "Installed: $DestBin"
 } finally {
   Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
 }
 
-if ($AddToPath) {
-  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-  if (-not $userPath) {
-    $userPath = ""
-  }
-  $segments = $userPath -split ';' | Where-Object { $_ -ne "" }
-  if ($segments -notcontains $InstallDir) {
-    $newPath = if ($userPath -eq "") { $InstallDir } else { "$userPath;$InstallDir" }
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Write-Host "Added to user PATH: $InstallDir"
-    Write-Host "Restart terminal to pick up PATH changes."
-  }
+$normalizedInstallDir = Normalize-PathEntry $InstallDir
+$currentSegments = Get-PathSegments $env:Path
+
+if ($currentSegments -notcontains $normalizedInstallDir) {
+  $env:Path = if ([string]::IsNullOrWhiteSpace($env:Path)) { $InstallDir } else { "$InstallDir;$env:Path" }
+  Write-Success "Added to current PATH: $InstallDir"
 }
 
-if (-not (($env:Path -split ';') -contains $InstallDir)) {
-  Write-Host "Note: $InstallDir is not in current PATH."
-  Write-Host "Reopen terminal or run with -AddToPath."
+$persistPath = -not $NoAddToPath
+if ($persistPath) {
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $userSegments = Get-PathSegments $userPath
+  if ($userSegments -notcontains $normalizedInstallDir) {
+    $newPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $InstallDir } else { "$userPath;$InstallDir" }
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    Write-Success "Added to user PATH: $InstallDir"
+  }
+} else {
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $userSegments = Get-PathSegments $userPath
+  if ($userSegments -notcontains $normalizedInstallDir) {
+    Write-Warn "Note: $InstallDir was added only to current PATH."
+    Write-Info "Run without -NoAddToPath to persist for future terminals."
+  }
 }
