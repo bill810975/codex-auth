@@ -211,7 +211,7 @@ When enabled:
 3. If active-account remaining quota is below either threshold, it switches to the best alternative account without foreground CLI output:
    - `5h` remaining `< auto_switch.threshold_5h_percent` (default `10%`)
    - `weekly` remaining `< auto_switch.threshold_weekly_percent` (default `5%`)
-    - on Linux/WSL, the timer-triggered service writes a user-service journal line with the source and destination emails when an automatic switch happens
+   - on Linux/WSL, the timer-triggered service writes a user-service journal line with the source and destination emails when an automatic switch happens
    If no better subscription account is available and environment variable `CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH` points to an auth file containing `OPENAI_API_KEY`, auto-switch copies that fallback auth file to `~/.codex/auth.json`.
 4. Candidate scoring is reset-aware:
    - if `resets_at <= now`, that window is treated as fully reset (`100%`)

@@ -16,6 +16,8 @@ const windows_helper_name = "codex-auth-auto.exe";
 const windows_task_trigger_interval = "PT1M";
 const lock_file_name = "auto-switch.lock";
 const poll_interval_ns = 60 * std.time.ns_per_s;
+// auth.json files are small JSON blobs; 10 MiB is a defensive upper bound.
+const max_auth_file_size_bytes = 10 * 1024 * 1024;
 const api_key_fallback_auth_path_env_name = "CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH";
 pub const RuntimeState = enum { running, stopped, unknown };
 
@@ -412,7 +414,10 @@ fn maybeActivateApiKeyFallback(
     api_key_fallback_auth_path: ?[]const u8,
 ) !bool {
     const path = api_key_fallback_auth_path orelse return false;
-    const info = auth.parseAuthInfo(allocator, path) catch return false;
+    const info = auth.parseAuthInfo(allocator, path) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
     defer info.deinit(allocator);
     if (info.auth_mode != .apikey) return false;
 
@@ -441,7 +446,7 @@ fn readFileIfExistsAlloc(allocator: std.mem.Allocator, path: []const u8) !?[]u8 
         else => return err,
     };
     defer file.close();
-    return file.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    return file.readToEndAlloc(allocator, max_auth_file_size_bytes);
 }
 
 fn daemonCycle(allocator: std.mem.Allocator, codex_home: []const u8) !bool {

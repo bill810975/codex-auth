@@ -77,7 +77,7 @@ zig test src/main.zig -lc
 ## Clone, Build, and Local Setup
 
 ```shell
-git clone https://github.com/loongphy/codex-auth.git
+git clone https://github.com/bill810975/codex-auth.git
 cd codex-auth
 ```
 
@@ -93,6 +93,8 @@ zig build
 ```shell
 zig build run -- list
 ```
+
+This is also the required validation command after any `.zig` code changes.
 
 4. Optional: install to your Zig prefix so `codex-auth` is directly runnable:
 

@@ -107,11 +107,11 @@ pub fn fetchUsageForTokenWithFallbackUsingFetcher(
     account_id: []const u8,
     fetcher: anytype,
 ) !?registry.RateLimitSnapshot {
-    const primary = fetcher(allocator, endpoint, access_token, account_id) catch |err| blk: {
+    const primary = fetcher(allocator, endpoint, access_token, account_id) catch |primary_err| blk: {
         if (fallback_endpoint) |fallback| {
-            break :blk try fetcher(allocator, fallback, access_token, account_id);
+            break :blk fetcher(allocator, fallback, access_token, account_id) catch return primary_err;
         }
-        return err;
+        return primary_err;
     };
     if (primary != null) return primary;
 
@@ -250,8 +250,14 @@ fn isSupportedUsageEndpoint(endpoint: []const u8) bool {
     const host_end = std.mem.indexOfAny(u8, rest, "/?#") orelse rest.len;
     if (host_end == 0) return false;
     const host = rest[0..host_end];
-    if (std.mem.eql(u8, host, ".")) return false;
-    if (std.mem.indexOfAny(u8, host, "@[]") != null) return false;
+    return isValidUsageHost(host);
+}
+
+fn isValidUsageHost(host: []const u8) bool {
+    if (host.len == 0) return false;
+    if (std.mem.indexOfAny(u8, host, " \r\n\t@[]") != null) return false;
+    if (host[0] == '.' or host[host.len - 1] == '.') return false;
+    if (std.mem.indexOf(u8, host, "..") != null) return false;
     return true;
 }
 

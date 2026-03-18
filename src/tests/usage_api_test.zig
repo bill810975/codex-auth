@@ -110,6 +110,14 @@ test "resolve usage endpoint rejects invalid non-https values" {
         error.InvalidUsageApiEndpoint,
         usage_api.resolveUsageEndpointFromConfig(gpa, "http://proxy.example.com/backend-api/wham/usage"),
     );
+    try std.testing.expectError(
+        error.InvalidUsageApiEndpoint,
+        usage_api.resolveUsageEndpointFromConfig(gpa, "https://..example.com/backend-api/wham/usage"),
+    );
+    try std.testing.expectError(
+        error.InvalidUsageApiEndpoint,
+        usage_api.resolveUsageEndpointFromConfig(gpa, "https://example.com./backend-api/wham/usage"),
+    );
 }
 
 test "resolve fallback endpoint ignores empty or same-as-primary values" {
