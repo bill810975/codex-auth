@@ -80,7 +80,7 @@ pub const Registry = struct {
     active_account_activated_at_ms: ?i64,
     auto_switch: AutoSwitchConfig,
     api: ApiConfig,
-    accounts: std.ArrayList(AccountRecord),
+    accounts: std.ArrayListUnmanaged(AccountRecord),
 
     pub fn deinit(self: *Registry, allocator: std.mem.Allocator) void {
         for (self.accounts.items) |*rec| {
@@ -423,7 +423,7 @@ fn backupEntryLessThan(_: void, a: BackupEntry, b: BackupEntry) bool {
 }
 
 fn pruneBackups(allocator: std.mem.Allocator, dir: []const u8, base_name: []const u8, max: usize) !void {
-    var list = std.ArrayList(BackupEntry).empty;
+    var list = std.ArrayListUnmanaged(BackupEntry){};
     defer {
         for (list.items) |item| allocator.free(item.name);
         list.deinit(allocator);
@@ -830,7 +830,7 @@ fn importAuthDirectory(
     var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
     defer dir.close();
 
-    var names = std.ArrayList([]u8).empty;
+    var names = std.ArrayListUnmanaged([]u8){};
     defer {
         for (names.items) |name| allocator.free(name);
         names.deinit(allocator);
@@ -873,7 +873,7 @@ fn importAccountsSnapshotDirectory(
     };
     defer dir.close();
 
-    var candidates = std.ArrayList(PurgeImportCandidate).empty;
+    var candidates = std.ArrayListUnmanaged(PurgeImportCandidate){};
     defer {
         for (candidates.items) |*candidate| candidate.deinit(allocator);
         candidates.deinit(allocator);
@@ -1439,7 +1439,7 @@ fn defaultRegistry() Registry {
         .active_account_activated_at_ms = null,
         .auto_switch = defaultAutoSwitchConfig(),
         .api = defaultApiConfig(),
-        .accounts = std.ArrayList(AccountRecord).empty,
+        .accounts = std.ArrayListUnmanaged(AccountRecord){},
     };
 }
 
@@ -1673,7 +1673,7 @@ fn loadLegacyRegistryV2(
     var reg = defaultRegistry();
     errdefer reg.deinit(allocator);
     var legacy_active_email: ?[]u8 = null;
-    var legacy_accounts = std.ArrayList(LegacyAccountRecord).empty;
+    var legacy_accounts = std.ArrayListUnmanaged(LegacyAccountRecord){};
     defer {
         for (legacy_accounts.items) |*rec| freeLegacyAccountRecord(allocator, rec);
         legacy_accounts.deinit(allocator);
@@ -1903,10 +1903,9 @@ fn writeRegistryFileAtomic(path: []const u8, data: []const u8) !void {
     if (builtin.os.tag == .windows) {
         return writeRegistryFileReplace(path, data);
     }
-    var buf: [4096]u8 = undefined;
-    var atomic_file = try std.fs.cwd().atomicFile(path, .{ .write_buffer = &buf });
+    var atomic_file = try std.fs.cwd().atomicFile(path, .{});
     defer atomic_file.deinit();
-    try atomic_file.file_writer.interface.writeAll(data);
+    try atomic_file.file.writer().writeAll(data);
     try atomic_file.finish();
 }
 
@@ -1924,11 +1923,10 @@ pub fn saveRegistry(allocator: std.mem.Allocator, codex_home: []const u8, reg: *
         .api = reg.api,
         .accounts = reg.accounts.items,
     };
-    var aw: std.Io.Writer.Allocating = .init(allocator);
-    defer aw.deinit();
-    const writer = &aw.writer;
-    try std.json.Stringify.value(out, .{ .whitespace = .indent_2 }, writer);
-    const data = aw.written();
+    var json_buf = std.ArrayList(u8).init(allocator);
+    defer json_buf.deinit();
+    try std.json.stringify(out, .{ .whitespace = .indent_2 }, json_buf.writer());
+    const data = json_buf.items;
 
     if (try fileEqualsBytes(allocator, path, data)) {
         return;

@@ -100,7 +100,7 @@ pub fn helpStateLabel(enabled: bool) []const u8 {
 }
 
 fn colorEnabled() bool {
-    return std.fs.File.stdout().isTty();
+    return std.io.getStdOut().isTty();
 }
 
 pub fn printStatus(allocator: std.mem.Allocator, codex_home: []const u8) !void {
@@ -123,11 +123,11 @@ pub fn getStatus(allocator: std.mem.Allocator, codex_home: []const u8) !Status {
     };
 }
 
-pub fn writeStatus(out: *std.Io.Writer, status: Status) !void {
+pub fn writeStatus(out: std.io.AnyWriter, status: Status) !void {
     try writeStatusWithColor(out, status, false);
 }
 
-fn writeStatusWithColor(out: *std.Io.Writer, status: Status, use_color: bool) !void {
+fn writeStatusWithColor(out: std.io.AnyWriter, status: Status, use_color: bool) !void {
     if (use_color) try out.writeAll(ansi.bold);
     try out.writeAll("auto-switch: ");
     if (use_color) try out.writeAll(if (status.enabled) ansi.bold_green else ansi.bold_red);
@@ -163,22 +163,20 @@ fn writeStatusWithColor(out: *std.Io.Writer, status: Status, use_color: bool) !v
     if (use_color) try out.writeAll(ansi.reset);
     try out.writeAll("\n");
 
-    try out.flush();
 }
 
 pub fn writeAutoSwitchLogLine(
-    out: *std.Io.Writer,
+    out: std.io.AnyWriter,
     from: *const registry.AccountRecord,
     to: *const registry.AccountRecord,
 ) !void {
     try out.print("auto-switch: {s} -> {s}\n", .{ from.email, to.email });
-    try out.flush();
+
 }
 
 fn emitAutoSwitchLog(from: *const registry.AccountRecord, to: *const registry.AccountRecord) void {
-    var stderr_buffer: [256]u8 = undefined;
-    var writer = std.fs.File.stderr().writer(&stderr_buffer);
-    writeAutoSwitchLogLine(&writer.interface, from, to) catch {};
+    var writer = std.io.getStdErr().writer();
+    writeAutoSwitchLogLine(writer.any(), from, to) catch {};
 }
 
 pub fn handleAutoCommand(allocator: std.mem.Allocator, codex_home: []const u8, cmd: cli.AutoOptions) !void {
@@ -199,12 +197,11 @@ pub fn handleApiUsageCommand(allocator: std.mem.Allocator, codex_home: []const u
     try registry.saveRegistry(allocator, codex_home, &reg);
 
     if (enabled) {
-        var stderr_buffer: [512]u8 = undefined;
-        var writer = std.fs.File.stderr().writer(&stderr_buffer);
-        const out = &writer.interface;
+        var writer = std.io.getStdErr().writer();
+        const out = writer.any();
         try out.writeAll("\x1b[1;33mWarning:\x1b[0m Enabling API-based usage refresh may violate OpenAI's usage guidelines\n");
         try out.writeAll("         and lead to account suspension. Use at your own risk.\n");
-        try out.flush();
+
     }
 }
 
@@ -446,7 +443,7 @@ fn readFileIfExistsAlloc(allocator: std.mem.Allocator, path: []const u8) !?[]u8 
         else => return err,
     };
     defer file.close();
-    return file.readToEndAlloc(allocator, max_auth_file_size_bytes);
+    return try file.readToEndAlloc(allocator, max_auth_file_size_bytes);
 }
 
 fn daemonCycle(allocator: std.mem.Allocator, codex_home: []const u8) !bool {
@@ -986,7 +983,7 @@ fn runIgnoringFailure(allocator: std.mem.Allocator, argv: []const []const u8) vo
 }
 
 fn escapeXml(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
-    var out = std.ArrayList(u8).empty;
+    var out = std.ArrayListUnmanaged(u8){};
     defer out.deinit(allocator);
     for (raw) |ch| {
         switch (ch) {
@@ -1002,7 +999,7 @@ fn escapeXml(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
 }
 
 fn escapeSystemdValue(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
-    var out = std.ArrayList(u8).empty;
+    var out = std.ArrayListUnmanaged(u8){};
     defer out.deinit(allocator);
     for (raw) |ch| {
         switch (ch) {

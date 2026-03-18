@@ -202,8 +202,8 @@ pub fn findMatchingAccounts(
     allocator: std.mem.Allocator,
     reg: *registry.Registry,
     query: []const u8,
-) !std.ArrayList(usize) {
-    var matches = std.ArrayList(usize).empty;
+) !std.ArrayListUnmanaged(usize) {
+    var matches = std.ArrayListUnmanaged(usize){};
     for (reg.accounts.items, 0..) |*rec, idx| {
         if (std.ascii.indexOfIgnoreCase(rec.email, query) != null or
             (rec.alias.len != 0 and std.ascii.indexOfIgnoreCase(rec.alias, query) != null))
@@ -244,9 +244,8 @@ fn handleHelp(allocator: std.mem.Allocator, codex_home: []const u8) !void {
 
 fn handleClean(allocator: std.mem.Allocator, codex_home: []const u8) !void {
     const summary = try registry.cleanAccountsBackups(allocator, codex_home);
-    var stdout: [256]u8 = undefined;
-    var writer = std.fs.File.stdout().writer(&stdout);
-    const out = &writer.interface;
+    var writer = std.io.getStdOut().writer();
+    const out = writer.any();
     try out.print(
         "cleaned accounts: auth_backups={d}, registry_backups={d}, stale_entries={d}\n",
         .{
@@ -255,7 +254,7 @@ fn handleClean(allocator: std.mem.Allocator, codex_home: []const u8) !void {
             summary.stale_snapshot_files_removed,
         },
     );
-    try out.flush();
+
 }
 
 // Tests live in separate files but are pulled in by main.zig for zig test.

@@ -16,7 +16,7 @@ const ansi = struct {
 };
 
 fn colorEnabled() bool {
-    return std.fs.File.stdout().isTty();
+    return std.io.getStdOut().isTty();
 }
 
 fn planDisplay(rec: *const registry.AccountRecord, missing: []const u8) []const u8 {
@@ -164,7 +164,6 @@ fn printAccountsTable(reg: *registry.Registry) !void {
         }
     }
 
-    try out.flush();
 }
 
 fn printAccountsJson(reg: *registry.Registry) !void {
@@ -178,9 +177,9 @@ fn printAccountsJson(reg: *registry.Registry) !void {
         .api = reg.api,
         .accounts = reg.accounts.items,
     };
-    try std.json.Stringify.value(dump, .{ .whitespace = .indent_2 }, out);
+    try std.json.stringify(dump, .{ .whitespace = .indent_2 }, out);
     try out.writeAll("\n");
-    try out.flush();
+
 }
 
 fn printAccountsCsv(reg: *registry.Registry) !void {
@@ -208,7 +207,7 @@ fn printAccountsCsv(reg: *registry.Registry) !void {
             .{ if (active) "1" else "0", account_key, chatgpt_account_id, chatgpt_user_id, email, plan, rate_5h_str, rate_week_str, last },
         );
     }
-    try out.flush();
+
 }
 
 fn printAccountsCompact(reg: *registry.Registry) !void {
@@ -232,7 +231,7 @@ fn printAccountsCompact(reg: *registry.Registry) !void {
             .{ if (active) "* " else "  ", email, plan, rate_5h_str, rate_week_str, last },
         );
     }
-    try out.flush();
+
 }
 
 const RegistryOut = struct {
@@ -446,7 +445,7 @@ fn formatResetTimeAlloc(ts: i64, now: i64) ![]u8 {
     return std.fmt.allocPrint(std.heap.page_allocator, "{d:0>2}:{d:0>2} on {d} {s}", .{ hour, min, day, months[month_idx] });
 }
 
-fn printTableBorder(out: *std.Io.Writer, widths: []const usize) !void {
+fn printTableBorder(out: std.io.AnyWriter, widths: []const usize) !void {
     try out.writeAll("+");
     for (widths) |w| {
         var i: usize = 0;
@@ -458,7 +457,7 @@ fn printTableBorder(out: *std.Io.Writer, widths: []const usize) !void {
     try out.writeAll("\n");
 }
 
-fn printTableDivider(out: *std.Io.Writer, widths: []const usize) !void {
+fn printTableDivider(out: std.io.AnyWriter, widths: []const usize) !void {
     try out.writeAll("+");
     for (widths) |w| {
         var i: usize = 0;
@@ -470,7 +469,7 @@ fn printTableDivider(out: *std.Io.Writer, widths: []const usize) !void {
     try out.writeAll("\n");
 }
 
-fn printTableEnd(out: *std.Io.Writer, widths: []const usize) !void {
+fn printTableEnd(out: std.io.AnyWriter, widths: []const usize) !void {
     try out.writeAll("+");
     for (widths) |w| {
         var i: usize = 0;
@@ -482,7 +481,7 @@ fn printTableEnd(out: *std.Io.Writer, widths: []const usize) !void {
     try out.writeAll("\n");
 }
 
-fn printTableRow(out: *std.Io.Writer, widths: []const usize, cells: []const []const u8) !void {
+fn printTableRow(out: std.io.AnyWriter, widths: []const usize, cells: []const []const u8) !void {
     try out.writeAll("|");
     for (cells, 0..) |cell, idx| {
         try out.writeAll(" ");
@@ -497,7 +496,7 @@ fn printTableRow(out: *std.Io.Writer, widths: []const usize, cells: []const []co
     try out.writeAll("\n");
 }
 
-fn writePadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+fn writePadded(out: std.io.AnyWriter, value: []const u8, width: usize) !void {
     try out.writeAll(value);
     if (value.len >= width) return;
     var i: usize = 0;
@@ -507,7 +506,7 @@ fn writePadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
     }
 }
 
-fn writeRepeat(out: *std.Io.Writer, ch: u8, count: usize) !void {
+fn writeRepeat(out: std.io.AnyWriter, ch: u8, count: usize) !void {
     var i: usize = 0;
     while (i < count) : (i += 1) {
         try out.writeByte(ch);
@@ -636,7 +635,7 @@ fn tableTotalWidth(widths: []const usize) usize {
 }
 
 fn terminalWidth() usize {
-    const stdout_file = std.fs.File.stdout();
+    const stdout_file = std.io.getStdOut();
     if (!stdout_file.isTty()) return 0;
 
     if (comptime builtin.os.tag == .windows) {
@@ -694,7 +693,7 @@ test "printTableRow handles long cells without underflow" {
     const widths = [_]usize{3};
     const cells = [_][]const u8{"abcdef"};
     try printTableRow(&writer, &widths, &cells);
-    try writer.flush();
+
 }
 
 test "truncateAlloc respects max_len" {

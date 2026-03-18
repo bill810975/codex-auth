@@ -36,7 +36,7 @@ pub fn scanLatestUsageWithSource(allocator: std.mem.Allocator, codex_home: []con
     const sessions_root = try std.fs.path.join(allocator, &[_][]const u8{ codex_home, "sessions" });
     defer allocator.free(sessions_root);
 
-    var candidates = std.ArrayList(RolloutCandidate).empty;
+    var candidates = std.ArrayListUnmanaged(RolloutCandidate){};
     defer {
         for (candidates.items) |candidate| {
             allocator.free(candidate.path);

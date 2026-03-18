@@ -1,21 +1,20 @@
 const std = @import("std");
 
 pub const Stdout = struct {
-    buffer: [4096]u8 = undefined,
     writer: std.fs.File.Writer,
 
     pub fn init(self: *Stdout) void {
-        self.writer = getStdoutFile().writer(&self.buffer);
+        self.writer = getStdoutFile().writer();
     }
 
-    pub fn out(self: *Stdout) *@TypeOf(self.writer.interface) {
-        return &self.writer.interface;
+    pub fn out(self: *Stdout) std.io.AnyWriter {
+        return self.writer.any();
     }
 };
 
 fn getStdoutFile() std.fs.File {
     if (@hasDecl(std.fs.File, "stdout")) {
-        return std.fs.File.stdout();
+        return std.io.getStdOut();
     }
     if (@hasDecl(std, "io") and @hasDecl(std.io, "getStdOut")) {
         return std.io.getStdOut();

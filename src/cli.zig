@@ -24,11 +24,11 @@ const ansi = struct {
 };
 
 fn colorEnabled() bool {
-    return std.fs.File.stdout().isTty();
+    return std.io.getStdOut().isTty();
 }
 
 fn stderrColorEnabled() bool {
-    return std.fs.File.stderr().isTty();
+    return std.io.getStdErr().isTty();
 }
 
 pub const OutputFormat = enum { table, json, csv, compact };
@@ -244,19 +244,18 @@ pub fn printHelp(auto_cfg: *const registry.AutoSwitchConfig, api_cfg: *const reg
     const out = stdout.out();
     const use_color = colorEnabled();
     try writeHelp(out, use_color, auto_cfg, api_cfg);
-    try out.flush();
+
     try printUsageApiRiskWarning(api_cfg.usage);
 }
 
 pub fn printUsageApiRiskWarning(api_usage_enabled: bool) !void {
-    var buffer: [512]u8 = undefined;
-    var writer = std.fs.File.stderr().writer(&buffer);
-    const out = &writer.interface;
+    var writer = std.io.getStdErr().writer();
+    const out = writer.any();
     try writeUsageApiRiskWarning(out, stderrColorEnabled(), api_usage_enabled);
-    try out.flush();
+
 }
 
-pub fn writeUsageApiRiskWarning(out: *std.Io.Writer, use_color: bool, api_usage_enabled: bool) !void {
+pub fn writeUsageApiRiskWarning(out: std.io.AnyWriter, use_color: bool, api_usage_enabled: bool) !void {
     if (!api_usage_enabled) return;
 
     if (use_color) try out.writeAll(ansi.bold_yellow);
@@ -267,7 +266,7 @@ pub fn writeUsageApiRiskWarning(out: *std.Io.Writer, use_color: bool, api_usage_
 }
 
 pub fn writeHelp(
-    out: *std.Io.Writer,
+    out: std.io.AnyWriter,
     use_color: bool,
     auto_cfg: *const registry.AutoSwitchConfig,
     api_cfg: *const registry.ApiConfig,
@@ -378,7 +377,7 @@ fn helpTargetColumn(entries: []const HelpEntry, indent: usize) usize {
 }
 
 fn writeHelpEntry(
-    out: *std.Io.Writer,
+    out: std.io.AnyWriter,
     use_color: bool,
     indent: usize,
     target_col: usize,
@@ -409,7 +408,7 @@ pub fn printVersion() !void {
     stdout.init();
     const out = stdout.out();
     try out.print("codex-auth {s}\n", .{version.app_version});
-    try out.flush();
+
 }
 
 pub fn warnDeprecatedLoginAlias(opts: LoginOptions) void {
@@ -418,36 +417,34 @@ pub fn warnDeprecatedLoginAlias(opts: LoginOptions) void {
 }
 
 fn writeDeprecatedLoginAliasWarning(replacement: []const u8, use_color: bool) !void {
-    var buffer: [512]u8 = undefined;
-    var writer = std.fs.File.stderr().writer(&buffer);
-    const out = &writer.interface;
+    var writer = std.io.getStdErr().writer();
+    const out = writer.any();
     try writeDeprecatedLoginAliasWarningTo(out, replacement, use_color);
-    try out.flush();
+
 }
 
-pub fn writeErrorPrefixTo(out: *std.Io.Writer, use_color: bool) !void {
+pub fn writeErrorPrefixTo(out: std.io.AnyWriter, use_color: bool) !void {
     if (use_color) try out.writeAll(ansi.bold_red);
     try out.writeAll("error:");
     if (use_color) try out.writeAll(ansi.reset);
 }
 
-pub fn writeHintPrefixTo(out: *std.Io.Writer, use_color: bool) !void {
+pub fn writeHintPrefixTo(out: std.io.AnyWriter, use_color: bool) !void {
     if (use_color) try out.writeAll(ansi.bold_cyan);
     try out.writeAll("hint:");
     if (use_color) try out.writeAll(ansi.reset);
 }
 
 pub fn printAccountNotFoundError(query: []const u8) !void {
-    var buffer: [512]u8 = undefined;
-    var writer = std.fs.File.stderr().writer(&buffer);
-    const out = &writer.interface;
+    var writer = std.io.getStdErr().writer();
+    const out = writer.any();
     const use_color = stderrColorEnabled();
     try writeErrorPrefixTo(out, use_color);
     try out.print(" no account matches '{s}'.\n", .{query});
-    try out.flush();
+
 }
 
-pub fn writeDeprecatedLoginAliasWarningTo(out: *std.Io.Writer, replacement: []const u8, use_color: bool) !void {
+pub fn writeDeprecatedLoginAliasWarningTo(out: std.io.AnyWriter, replacement: []const u8, use_color: bool) !void {
     if (use_color) try out.writeAll(ansi.bold_red);
     try out.writeAll("warning:");
     if (use_color) try out.writeAll(ansi.reset);
@@ -463,14 +460,13 @@ pub fn writeDeprecatedLoginAliasWarningTo(out: *std.Io.Writer, replacement: []co
 }
 
 fn writeCodexLoginLaunchFailureHint(err_name: []const u8, use_color: bool) !void {
-    var buffer: [512]u8 = undefined;
-    var writer = std.fs.File.stderr().writer(&buffer);
-    const out = &writer.interface;
+    var writer = std.io.getStdErr().writer();
+    const out = writer.any();
     try writeCodexLoginLaunchFailureHintTo(out, err_name, use_color);
-    try out.flush();
+
 }
 
-pub fn writeCodexLoginLaunchFailureHintTo(out: *std.Io.Writer, err_name: []const u8, use_color: bool) !void {
+pub fn writeCodexLoginLaunchFailureHintTo(out: std.io.AnyWriter, err_name: []const u8, use_color: bool) !void {
     try writeErrorPrefixTo(out, use_color);
     if (std.mem.eql(u8, err_name, "FileNotFound")) {
         try out.writeAll(" the `codex` executable was not found in your PATH.\n\n");
@@ -560,10 +556,10 @@ fn selectWithNumbers(allocator: std.mem.Allocator, reg: *registry.Registry) !?[]
     try out.writeAll("Select account to activate:\n\n");
     try renderSwitchList(out, reg, rows.items, idx_width, widths, active_idx, use_color);
     try out.writeAll("Select account number (or q to quit): ");
-    try out.flush();
+
 
     var buf: [64]u8 = undefined;
-    const n = try std.fs.File.stdin().read(&buf);
+    const n = try std.io.getStdIn().read(&buf);
     const line = std.mem.trim(u8, buf[0..n], " \n\r\t");
     if (line.len == 0) {
         if (active_idx) |i| return accountIdForSelectable(&rows, reg, i);
@@ -591,10 +587,10 @@ fn selectWithNumbersFromIndices(allocator: std.mem.Allocator, reg: *registry.Reg
     try out.writeAll("Select account to activate:\n\n");
     try renderSwitchList(out, reg, rows.items, idx_width, widths, active_idx, use_color);
     try out.writeAll("Select account number (or q to quit): ");
-    try out.flush();
+
 
     var buf: [64]u8 = undefined;
-    const n = try std.fs.File.stdin().read(&buf);
+    const n = try std.io.getStdIn().read(&buf);
     const line = std.mem.trim(u8, buf[0..n], " \n\r\t");
     if (line.len == 0) {
         if (active_idx) |i| return accountIdForSelectable(&rows, reg, i);
@@ -642,7 +638,7 @@ fn selectInteractiveFromIndices(allocator: std.mem.Allocator, reg: *registry.Reg
         if (use_color) try out.writeAll(ansi.dim);
         try out.writeAll("Keys: ↑/↓ or j/k, Enter select, 1-9 type, Backspace edit, Esc or q quit\n");
         if (use_color) try out.writeAll(ansi.reset);
-        try out.flush();
+
 
         var b: [8]u8 = undefined;
         const n = try tty.read(&b);
@@ -730,10 +726,10 @@ fn selectRemoveWithNumbers(allocator: std.mem.Allocator, reg: *registry.Registry
     try out.writeAll("Select accounts to delete:\n\n");
     try renderRemoveList(out, reg, rows.items, idx_width, widths, null, checked, use_color);
     try out.writeAll("Enter account numbers (comma/space separated, empty to cancel): ");
-    try out.flush();
+
 
     var buf: [256]u8 = undefined;
-    const n = try std.fs.File.stdin().read(&buf);
+    const n = try std.io.getStdIn().read(&buf);
     const line = std.mem.trim(u8, buf[0..n], " \n\r\t");
     if (line.len == 0) return null;
 
@@ -808,7 +804,7 @@ fn selectInteractive(allocator: std.mem.Allocator, reg: *registry.Registry) !?[]
         if (use_color) try out.writeAll(ansi.dim);
         try out.writeAll("Keys: ↑/↓ or j/k, Enter select, 1-9 type, Backspace edit, Esc or q quit\n");
         if (use_color) try out.writeAll(ansi.reset);
-        try out.flush();
+
 
         var b: [8]u8 = undefined;
         const n = try tty.read(&b);
@@ -916,7 +912,7 @@ fn selectRemoveInteractive(allocator: std.mem.Allocator, reg: *registry.Registry
         if (use_color) try out.writeAll(ansi.dim);
         try out.writeAll("Keys: ↑/↓ or j/k move, Space toggle, Enter delete, 1-9 type, Backspace edit, Esc exit\n");
         if (use_color) try out.writeAll(ansi.reset);
-        try out.flush();
+
 
         var b: [8]u8 = undefined;
         const n = try tty.read(&b);
@@ -996,7 +992,7 @@ fn selectRemoveInteractive(allocator: std.mem.Allocator, reg: *registry.Registry
 }
 
 fn renderSwitchList(
-    out: *std.Io.Writer,
+    out: std.io.AnyWriter,
     reg: *registry.Registry,
     rows: []const SwitchRow,
     idx_width: usize,
@@ -1069,7 +1065,7 @@ fn renderSwitchList(
 }
 
 fn renderRemoveList(
-    out: *std.Io.Writer,
+    out: std.io.AnyWriter,
     reg: *registry.Registry,
     rows: []const SwitchRow,
     idx_width: usize,
@@ -1146,7 +1142,7 @@ fn renderRemoveList(
     }
 }
 
-fn writeIndexPadded(out: *std.Io.Writer, idx: usize, width: usize) !void {
+fn writeIndexPadded(out: std.io.AnyWriter, idx: usize, width: usize) !void {
     var buf: [16]u8 = undefined;
     const idx_str = std.fmt.bufPrint(&buf, "{d}", .{idx}) catch "0";
     if (idx_str.len < width) {
@@ -1158,7 +1154,7 @@ fn writeIndexPadded(out: *std.Io.Writer, idx: usize, width: usize) !void {
     try out.writeAll(idx_str);
 }
 
-fn writePadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+fn writePadded(out: std.io.AnyWriter, value: []const u8, width: usize) !void {
     try out.writeAll(value);
     if (value.len >= width) return;
     var i: usize = 0;
@@ -1168,7 +1164,7 @@ fn writePadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
     }
 }
 
-fn writeTruncatedPadded(out: *std.Io.Writer, value: []const u8, width: usize) !void {
+fn writeTruncatedPadded(out: std.io.AnyWriter, value: []const u8, width: usize) !void {
     if (width == 0) return;
     if (value.len <= width) {
         try writePadded(out, value, width);

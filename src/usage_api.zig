@@ -66,7 +66,7 @@ pub fn resolveFallbackUsageEndpointFromConfig(
     if (raw.len == 0) return null;
     if (!isSupportedUsageEndpoint(raw)) return error.InvalidUsageApiEndpoint;
     if (std.mem.eql(u8, primary_endpoint, raw)) return null;
-    return allocator.dupe(u8, raw);
+    return try allocator.dupe(u8, raw);
 }
 
 pub fn fetchUsageForToken(
