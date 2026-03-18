@@ -240,11 +240,12 @@ fn parsePlanType(v: std.json.Value) ?registry.PlanType {
 fn isSupportedUsageEndpoint(endpoint: []const u8) bool {
     if (std.mem.indexOfAny(u8, endpoint, " \r\n\t") != null) return false;
 
-    const scheme_end = std.mem.indexOf(u8, endpoint, "://") orelse return false;
+    const scheme_delimiter = "://";
+    const scheme_end = std.mem.indexOf(u8, endpoint, scheme_delimiter) orelse return false;
     const scheme = endpoint[0..scheme_end];
     if (!std.mem.eql(u8, scheme, "https")) return false;
 
-    const rest = endpoint[scheme_end + 3 ..];
+    const rest = endpoint[scheme_end + scheme_delimiter.len ..];
     if (rest.len == 0) return false;
     const host_end = std.mem.indexOfAny(u8, rest, "/?#") orelse rest.len;
     if (host_end == 0) return false;
