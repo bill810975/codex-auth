@@ -39,6 +39,8 @@ This document describes how `codex-auth` stores accounts, synchronizes auth file
 - `~/.codex/accounts/registry.json.bak.YYYYMMDD-hhmmss[.N]`
 - `~/.codex/sessions/...`
 
+Account switching and provider configuration only touch `auth.json` and `accounts/registry.json` (plus their backups). They do not rewrite Codex settings files or chat history/session files.
+
 `codex-auth` resolves `codex_home` from the real user home directory:
 
 1. `HOME/.codex`
@@ -246,7 +248,9 @@ Usage refresh is active-account-only and depends on `api.usage`:
 1. If `api.usage = true`, try only the ChatGPT usage API with the current active `~/.codex/auth.json`.
 2. If `api.usage = false`, read only the newest `~/.codex/sessions/**/rollout-*.jsonl` file by `mtime`.
 
-- ChatGPT API refresh sends `Authorization: Bearer <tokens.access_token>` and `ChatGPT-Account-Id: <chatgpt_account_id>` to `https://chatgpt.com/backend-api/wham/usage`.
+- ChatGPT API refresh sends `Authorization: Bearer <tokens.access_token>` and `ChatGPT-Account-Id: <chatgpt_account_id>` to the configured usage endpoint.
+- By default the endpoint is `https://chatgpt.com/backend-api/wham/usage`.
+- You can override it with environment variable `CODEX_AUTH_USAGE_API_ENDPOINT` (must be a valid `https://` URL with a host).
 - API refresh only updates the current active account. Other accounts keep their stored historical snapshots until they become active.
 - API refresh writes a new snapshot only when the fetched snapshot differs from the stored one; unchanged API responses do not rewrite `registry.json`.
 - In API-only mode, API failures do not overwrite the stored usage snapshot and do not fall back to local rollout files.

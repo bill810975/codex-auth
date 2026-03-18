@@ -79,3 +79,35 @@ test "parse usage api response without windows is ignored" {
     const snapshot = try usage_api.parseUsageResponse(gpa, body);
     try std.testing.expect(snapshot == null);
 }
+
+test "resolve usage endpoint falls back to default when provider endpoint is empty" {
+    const gpa = std.testing.allocator;
+    const endpoint = try usage_api.resolveUsageEndpointFromConfig(gpa, "");
+    defer gpa.free(endpoint);
+
+    try std.testing.expectEqualStrings(usage_api.default_usage_endpoint, endpoint);
+}
+
+test "resolve usage endpoint accepts custom third-party endpoint" {
+    const gpa = std.testing.allocator;
+    const endpoint = try usage_api.resolveUsageEndpointFromConfig(gpa, "https://proxy.example.com/backend-api/wham/usage");
+    defer gpa.free(endpoint);
+
+    try std.testing.expectEqualStrings("https://proxy.example.com/backend-api/wham/usage", endpoint);
+}
+
+test "resolve usage endpoint rejects invalid non-https values" {
+    const gpa = std.testing.allocator;
+    try std.testing.expectError(
+        error.InvalidUsageApiEndpoint,
+        usage_api.resolveUsageEndpointFromConfig(gpa, "file:///tmp/usage.json"),
+    );
+    try std.testing.expectError(
+        error.InvalidUsageApiEndpoint,
+        usage_api.resolveUsageEndpointFromConfig(gpa, "https:///backend-api/wham/usage"),
+    );
+    try std.testing.expectError(
+        error.InvalidUsageApiEndpoint,
+        usage_api.resolveUsageEndpointFromConfig(gpa, "http://proxy.example.com/backend-api/wham/usage"),
+    );
+}

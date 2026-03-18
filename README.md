@@ -60,6 +60,20 @@ irm https://raw.githubusercontent.com/loongphy/codex-auth/main/scripts/install.p
   The installer adds the install dir to current/user `PATH` by default.
   Use `-NoAddToPath` to skip user `PATH` persistence.
 
+## Run After You Make Modifications
+
+If you are modifying this repository locally and want to run the CLI from source:
+
+```shell
+zig build run -- list
+```
+
+To run the full Zig test entry used by CI:
+
+```shell
+zig test src/main.zig -lc
+```
+
 ## Full Commands
 
 ```shell
@@ -165,6 +179,18 @@ Use pure local rollout refresh without any API calls:
 codex-auth config api disable
 ```
 
+Use a third-party OpenAI-compatible usage API provider endpoint:
+
+```shell
+CODEX_AUTH_USAGE_API_ENDPOINT="https://your-provider.example.com/backend-api/wham/usage" codex-auth list
+```
+
+Notes:
+
+- The endpoint must be a valid `https://` URL with a host and return an OpenAI-compatible usage payload.
+- If the variable is unset (or empty), `codex-auth` uses the default OpenAI endpoint.
+- This only changes where usage refresh requests are sent. It does not rewrite Codex app settings or chat history files.
+
 When auto-switching is enabled, a background worker refreshes the active account's usage from the configured source and silently switches accounts when:
 
 - 5h remaining drops below the configured 5h threshold (default `10%`), or
@@ -215,4 +241,4 @@ This project is provided as-is and use is at your own risk.
 2. **Local-only:** When `config api disable` is on, the tool scans local `~/.codex/sessions/*/rollout-*.jsonl` files without making API calls. This mode is safer, but it can be less accurate because recent Codex rollout files often contain `rate_limits: null`, so the latest local usage limit data may lag by several hours.
 
 **API Call Declaration:**
-By enabling API-based usage refresh, this tool will send your ChatGPT access token to OpenAI's servers (specifically `https://chatgpt.com/backend-api/wham/usage`) to fetch current quota information. This behavior may be detected by OpenAI and could violate their terms of service, potentially leading to account suspension or other risks. The decision to use this feature and any resulting consequences are entirely yours.
+By enabling API-based usage refresh, this tool will send your ChatGPT access token to the configured usage endpoint to fetch current quota information. By default this endpoint is `https://chatgpt.com/backend-api/wham/usage`, and you can override it with `CODEX_AUTH_USAGE_API_ENDPOINT`. This behavior may be detected by the provider and could violate their terms of service, potentially leading to account suspension or other risks. The decision to use this feature and any resulting consequences are entirely yours.

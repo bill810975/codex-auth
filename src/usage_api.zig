@@ -4,6 +4,7 @@ const auth = @import("auth.zig");
 const registry = @import("registry.zig");
 
 pub const default_usage_endpoint = "https://chatgpt.com/backend-api/wham/usage";
+pub const usage_endpoint_env_name = "CODEX_AUTH_USAGE_API_ENDPOINT";
 const request_timeout_secs: []const u8 = "5";
 
 pub fn fetchActiveUsage(allocator: std.mem.Allocator, codex_home: []const u8) !?registry.RateLimitSnapshot {
@@ -17,7 +18,25 @@ pub fn fetchActiveUsage(allocator: std.mem.Allocator, codex_home: []const u8) !?
     const access_token = info.access_token orelse return null;
     const chatgpt_account_id = info.chatgpt_account_id orelse return null;
 
-    return try fetchUsageForToken(allocator, default_usage_endpoint, access_token, chatgpt_account_id);
+    const endpoint = try resolveUsageEndpoint(allocator);
+    defer allocator.free(endpoint);
+    return try fetchUsageForToken(allocator, endpoint, access_token, chatgpt_account_id);
+}
+
+pub fn resolveUsageEndpoint(allocator: std.mem.Allocator) ![]u8 {
+    const configured = std.process.getEnvVarOwned(allocator, usage_endpoint_env_name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => return resolveUsageEndpointFromConfig(allocator, null),
+        else => return err,
+    };
+    defer allocator.free(configured);
+    return resolveUsageEndpointFromConfig(allocator, configured);
+}
+
+pub fn resolveUsageEndpointFromConfig(allocator: std.mem.Allocator, configured: ?[]const u8) ![]u8 {
+    const raw = configured orelse return allocator.dupe(u8, default_usage_endpoint);
+    if (raw.len == 0) return allocator.dupe(u8, default_usage_endpoint);
+    if (!isSupportedUsageEndpoint(raw)) return error.InvalidUsageApiEndpoint;
+    return allocator.dupe(u8, raw);
 }
 
 pub fn fetchUsageForToken(
@@ -147,6 +166,23 @@ fn parsePlanType(v: std.json.Value) ?registry.PlanType {
     if (std.ascii.eqlIgnoreCase(plan_name, "enterprise")) return .enterprise;
     if (std.ascii.eqlIgnoreCase(plan_name, "edu")) return .edu;
     return .unknown;
+}
+
+fn isSupportedUsageEndpoint(endpoint: []const u8) bool {
+    if (std.mem.indexOfAny(u8, endpoint, " \r\n\t") != null) return false;
+
+    const scheme_end = std.mem.indexOf(u8, endpoint, "://") orelse return false;
+    const scheme = endpoint[0..scheme_end];
+    if (!std.mem.eql(u8, scheme, "https")) return false;
+
+    const rest = endpoint[scheme_end + 3 ..];
+    if (rest.len == 0) return false;
+    const host_end = std.mem.indexOfAny(u8, rest, "/?#") orelse rest.len;
+    if (host_end == 0) return false;
+    const host = rest[0..host_end];
+    if (std.mem.eql(u8, host, ".")) return false;
+    if (std.mem.indexOfAny(u8, host, "@[]") != null) return false;
+    return true;
 }
 
 fn ceilMinutes(seconds: i64) ?i64 {
