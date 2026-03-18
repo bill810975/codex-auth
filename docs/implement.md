@@ -249,8 +249,9 @@ Usage refresh is active-account-only and depends on `api.usage`:
 2. If `api.usage = false`, read only the newest `~/.codex/sessions/**/rollout-*.jsonl` file by `mtime`.
 
 - ChatGPT API refresh sends `Authorization: Bearer <tokens.access_token>` and `ChatGPT-Account-Id: <chatgpt_account_id>` to the configured usage endpoint.
-- By default the endpoint is `https://chatgpt.com/backend-api/wham/usage`.
-- You can override it with environment variable `CODEX_AUTH_USAGE_API_ENDPOINT` (must be a valid `https://` URL with a host).
+- By default the primary endpoint is `https://chatgpt.com/backend-api/wham/usage`.
+- You can override the primary endpoint with environment variable `CODEX_AUTH_USAGE_API_ENDPOINT` (must be a valid `https://` URL with a host).
+- You can also set `CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT` (same URL validation). When present and different from primary, API refresh tries primary first, then automatically retries fallback when the primary request fails or returns no usable usage windows.
 - API refresh only updates the current active account. Other accounts keep their stored historical snapshots until they become active.
 - API refresh writes a new snapshot only when the fetched snapshot differs from the stored one; unchanged API responses do not rewrite `registry.json`.
 - In API-only mode, API failures do not overwrite the stored usage snapshot and do not fall back to local rollout files.

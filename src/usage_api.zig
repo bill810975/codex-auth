@@ -5,6 +5,7 @@ const registry = @import("registry.zig");
 
 pub const default_usage_endpoint = "https://chatgpt.com/backend-api/wham/usage";
 pub const usage_endpoint_env_name = "CODEX_AUTH_USAGE_API_ENDPOINT";
+pub const usage_fallback_endpoint_env_name = "CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT";
 const request_timeout_secs: []const u8 = "5";
 
 pub fn fetchActiveUsage(allocator: std.mem.Allocator, codex_home: []const u8) !?registry.RateLimitSnapshot {
@@ -20,7 +21,15 @@ pub fn fetchActiveUsage(allocator: std.mem.Allocator, codex_home: []const u8) !?
 
     const endpoint = try resolveUsageEndpoint(allocator);
     defer allocator.free(endpoint);
-    return try fetchUsageForToken(allocator, endpoint, access_token, chatgpt_account_id);
+    const fallback_endpoint = try resolveFallbackUsageEndpoint(allocator, endpoint);
+    defer if (fallback_endpoint) |value| allocator.free(value);
+    return try fetchUsageForTokenWithFallback(
+        allocator,
+        endpoint,
+        fallback_endpoint,
+        access_token,
+        chatgpt_account_id,
+    );
 }
 
 pub fn resolveUsageEndpoint(allocator: std.mem.Allocator) ![]u8 {
@@ -39,6 +48,27 @@ pub fn resolveUsageEndpointFromConfig(allocator: std.mem.Allocator, configured: 
     return allocator.dupe(u8, raw);
 }
 
+pub fn resolveFallbackUsageEndpoint(allocator: std.mem.Allocator, primary_endpoint: []const u8) !?[]u8 {
+    const configured = std.process.getEnvVarOwned(allocator, usage_fallback_endpoint_env_name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => return null,
+        else => return err,
+    };
+    defer allocator.free(configured);
+    return resolveFallbackUsageEndpointFromConfig(allocator, primary_endpoint, configured);
+}
+
+pub fn resolveFallbackUsageEndpointFromConfig(
+    allocator: std.mem.Allocator,
+    primary_endpoint: []const u8,
+    configured: ?[]const u8,
+) !?[]u8 {
+    const raw = configured orelse return null;
+    if (raw.len == 0) return null;
+    if (!isSupportedUsageEndpoint(raw)) return error.InvalidUsageApiEndpoint;
+    if (std.mem.eql(u8, primary_endpoint, raw)) return null;
+    return allocator.dupe(u8, raw);
+}
+
 pub fn fetchUsageForToken(
     allocator: std.mem.Allocator,
     endpoint: []const u8,
@@ -50,6 +80,45 @@ pub fn fetchUsageForToken(
     if (body.len == 0) return null;
 
     return parseUsageResponse(allocator, body);
+}
+
+pub fn fetchUsageForTokenWithFallback(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    fallback_endpoint: ?[]const u8,
+    access_token: []const u8,
+    account_id: []const u8,
+) !?registry.RateLimitSnapshot {
+    return fetchUsageForTokenWithFallbackUsingFetcher(
+        allocator,
+        endpoint,
+        fallback_endpoint,
+        access_token,
+        account_id,
+        fetchUsageForToken,
+    );
+}
+
+pub fn fetchUsageForTokenWithFallbackUsingFetcher(
+    allocator: std.mem.Allocator,
+    endpoint: []const u8,
+    fallback_endpoint: ?[]const u8,
+    access_token: []const u8,
+    account_id: []const u8,
+    fetcher: anytype,
+) !?registry.RateLimitSnapshot {
+    const primary = fetcher(allocator, endpoint, access_token, account_id) catch |err| blk: {
+        if (fallback_endpoint) |fallback| {
+            break :blk try fetcher(allocator, fallback, access_token, account_id);
+        }
+        return err;
+    };
+    if (primary != null) return primary;
+
+    if (fallback_endpoint) |fallback| {
+        return fetcher(allocator, fallback, access_token, account_id);
+    }
+    return null;
 }
 
 pub fn parseUsageResponse(allocator: std.mem.Allocator, body: []const u8) !?registry.RateLimitSnapshot {

@@ -74,6 +74,36 @@ To run the full Zig test entry used by CI:
 zig test src/main.zig -lc
 ```
 
+## Clone, Build, and Local Setup
+
+```shell
+git clone https://github.com/loongphy/codex-auth.git
+cd codex-auth
+```
+
+1. Install Zig `0.14.x` and ensure `zig` is on your `PATH`.
+2. Build the binary:
+
+```shell
+zig build
+```
+
+3. Run from source:
+
+```shell
+zig build run -- list
+```
+
+4. Optional: install to your Zig prefix so `codex-auth` is directly runnable:
+
+```shell
+zig build install
+```
+
+5. Prepare your Codex auth data:
+   - If you already use Codex CLI, `~/.codex/auth.json` is usually present.
+   - Otherwise run `codex login`, then `codex-auth login` or `codex-auth import <path>`.
+
 ## Full Commands
 
 ```shell
@@ -185,10 +215,17 @@ Use a third-party OpenAI-compatible usage API provider endpoint:
 CODEX_AUTH_USAGE_API_ENDPOINT="https://your-provider.example.com/backend-api/wham/usage" codex-auth list
 ```
 
+Prefer official endpoint first, then automatically fall back to a third-party endpoint when official usage requests fail or return no usable usage windows:
+
+```shell
+CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT="https://your-provider.example.com/backend-api/wham/usage" codex-auth list
+```
+
 Notes:
 
 - The endpoint must be a valid `https://` URL with a host and return an OpenAI-compatible usage payload.
 - If the variable is unset (or empty), `codex-auth` uses the default OpenAI endpoint.
+- `CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT` is optional. When set, `codex-auth` still tries the primary endpoint first, then tries the fallback endpoint only when the primary request fails or returns no usable windows.
 - This only changes where usage refresh requests are sent. It does not rewrite Codex app settings or chat history files.
 
 When auto-switching is enabled, a background worker refreshes the active account's usage from the configured source and silently switches accounts when:
