@@ -60,6 +60,52 @@ irm https://raw.githubusercontent.com/loongphy/codex-auth/main/scripts/install.p
   The installer adds the install dir to current/user `PATH` by default.
   Use `-NoAddToPath` to skip user `PATH` persistence.
 
+## Run After You Make Modifications
+
+If you are modifying this repository locally and want to run the CLI from source:
+
+```shell
+zig build run -- list
+```
+
+To run the full Zig test entry used by CI:
+
+```shell
+zig test src/main.zig -lc
+```
+
+## Clone, Build, and Local Setup
+
+```shell
+git clone https://github.com/bill810975/codex-auth.git
+cd codex-auth
+```
+
+1. Install Zig `0.14.x` and ensure `zig` is on your `PATH`.
+2. Build the binary:
+
+```shell
+zig build
+```
+
+3. Run from source:
+
+```shell
+zig build run -- list
+```
+
+This is also the required validation command after any `.zig` code changes.
+
+4. Optional: install to your Zig prefix so `codex-auth` is directly runnable:
+
+```shell
+zig build install
+```
+
+5. Prepare your Codex auth data:
+   - If you already use Codex CLI, `~/.codex/auth.json` is usually present.
+   - Otherwise run `codex login`, then `codex-auth login` or `codex-auth import <path>`.
+
 ## Full Commands
 
 ```shell
@@ -165,6 +211,38 @@ Use pure local rollout refresh without any API calls:
 codex-auth config api disable
 ```
 
+Use subscription accounts first, and when auto-switch cannot find any better subscription account, fall back to an API-key provider auth file:
+
+```shell
+CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH="$HOME/.codex/accounts/apikey-fallback.auth.json" codex-auth config auto enable
+```
+
+Fallback auth file example:
+
+```json
+{"OPENAI_API_KEY":"sk-..."}
+```
+
+Use a third-party OpenAI-compatible usage API provider endpoint:
+
+```shell
+CODEX_AUTH_USAGE_API_ENDPOINT="https://your-provider.example.com/backend-api/wham/usage" codex-auth list
+```
+
+Prefer official endpoint first, then automatically fall back to a third-party endpoint when official usage requests fail or return no usable usage windows:
+
+```shell
+CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT="https://your-provider.example.com/backend-api/wham/usage" codex-auth list
+```
+
+Notes:
+
+- The endpoint must be a valid `https://` URL with a host and return an OpenAI-compatible usage payload.
+- If the variable is unset (or empty), `codex-auth` uses the default OpenAI endpoint.
+- `CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT` is optional. When set, `codex-auth` still tries the primary endpoint first, then tries the fallback endpoint only when the primary request fails or returns no usable windows.
+- `CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH` is optional. It is only used by background auto-switching after quota checks decide the active subscription account should switch, but no better subscription account is available.
+- This only changes where usage refresh requests are sent. It does not rewrite Codex app settings or chat history files.
+
 When auto-switching is enabled, a background worker refreshes the active account's usage from the configured source and silently switches accounts when:
 
 - 5h remaining drops below the configured 5h threshold (default `10%`), or
@@ -215,4 +293,7 @@ This project is provided as-is and use is at your own risk.
 2. **Local-only:** When `config api disable` is on, the tool scans local `~/.codex/sessions/*/rollout-*.jsonl` files without making API calls. This mode is safer, but it can be less accurate because recent Codex rollout files often contain `rate_limits: null`, so the latest local usage limit data may lag by several hours.
 
 **API Call Declaration:**
-By enabling API-based usage refresh, this tool will send your ChatGPT access token to OpenAI's servers (specifically `https://chatgpt.com/backend-api/wham/usage`) to fetch current quota information. This behavior may be detected by OpenAI and could violate their terms of service, potentially leading to account suspension or other risks. The decision to use this feature and any resulting consequences are entirely yours.
+By enabling API-based usage refresh, this tool will send your ChatGPT access token to the configured usage endpoint to fetch current quota information. By default this endpoint is `https://chatgpt.com/backend-api/wham/usage`, and you can override it with `CODEX_AUTH_USAGE_API_ENDPOINT`. This behavior may be detected by the provider and could violate their terms of service, potentially leading to account suspension or other risks. The decision to use this feature and any resulting consequences are entirely yours.
+
+**Chat History Note:**
+`codex-auth` does not rewrite Codex settings files and does not delete `~/.codex/sessions/*` history files. Switching accounts (or falling back to an API-key auth file) only updates `~/.codex/auth.json` and `~/.codex/accounts/registry.json` with backups.

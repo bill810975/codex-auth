@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const cli = @import("cli.zig");
 const io_util = @import("io_util.zig");
+const auth = @import("auth.zig");
 const registry = @import("registry.zig");
 const sessions = @import("sessions.zig");
 const usage_api = @import("usage_api.zig");
@@ -15,6 +16,9 @@ const windows_helper_name = "codex-auth-auto.exe";
 const windows_task_trigger_interval = "PT1M";
 const lock_file_name = "auto-switch.lock";
 const poll_interval_ns = 60 * std.time.ns_per_s;
+// auth.json files are small JSON blobs; 10 MiB is a defensive upper bound.
+const max_auth_file_size_bytes = 10 * 1024 * 1024;
+const api_key_fallback_auth_path_env_name = "CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH";
 pub const RuntimeState = enum { running, stopped, unknown };
 
 const ansi = struct {
@@ -363,6 +367,17 @@ pub fn shouldSwitchCurrent(reg: *registry.Registry, now: i64) bool {
 }
 
 pub fn maybeAutoSwitch(allocator: std.mem.Allocator, codex_home: []const u8, reg: *registry.Registry) !bool {
+    const api_key_fallback_auth_path = try resolveApiKeyFallbackAuthPath(allocator);
+    defer if (api_key_fallback_auth_path) |path| allocator.free(path);
+    return maybeAutoSwitchWithApiKeyFallbackPath(allocator, codex_home, reg, api_key_fallback_auth_path);
+}
+
+pub fn maybeAutoSwitchWithApiKeyFallbackPath(
+    allocator: std.mem.Allocator,
+    codex_home: []const u8,
+    reg: *registry.Registry,
+    api_key_fallback_auth_path: ?[]const u8,
+) !bool {
     if (!reg.auto_switch.enabled) return false;
     const active = reg.active_account_key orelse return false;
     const now = std.time.timestamp();
@@ -370,12 +385,68 @@ pub fn maybeAutoSwitch(allocator: std.mem.Allocator, codex_home: []const u8, reg
 
     const active_idx = registry.findAccountIndexByAccountKey(reg, active) orelse return false;
     const current = candidateScore(&reg.accounts.items[active_idx], now);
-    const candidate_idx = bestAutoSwitchCandidateIndex(reg, now) orelse return false;
-    const candidate = candidateScore(&reg.accounts.items[candidate_idx], now);
-    if (candidate.value <= current.value) return false;
+    if (bestAutoSwitchCandidateIndex(reg, now)) |candidate_idx| {
+        const candidate = candidateScore(&reg.accounts.items[candidate_idx], now);
+        if (candidate.value > current.value) {
+            try registry.activateAccountByKey(allocator, codex_home, reg, reg.accounts.items[candidate_idx].account_key);
+            return true;
+        }
+    }
 
-    try registry.activateAccountByKey(allocator, codex_home, reg, reg.accounts.items[candidate_idx].account_key);
+    return maybeActivateApiKeyFallback(allocator, codex_home, api_key_fallback_auth_path);
+}
+
+fn resolveApiKeyFallbackAuthPath(allocator: std.mem.Allocator) !?[]u8 {
+    const configured = std.process.getEnvVarOwned(allocator, api_key_fallback_auth_path_env_name) catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => return null,
+        else => return err,
+    };
+    if (configured.len == 0) {
+        allocator.free(configured);
+        return null;
+    }
+    return configured;
+}
+
+fn maybeActivateApiKeyFallback(
+    allocator: std.mem.Allocator,
+    codex_home: []const u8,
+    api_key_fallback_auth_path: ?[]const u8,
+) !bool {
+    const path = api_key_fallback_auth_path orelse return false;
+    const info = auth.parseAuthInfo(allocator, path) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
+    defer info.deinit(allocator);
+    if (info.auth_mode != .apikey) return false;
+
+    const active_path = try registry.activeAuthPath(allocator, codex_home);
+    defer allocator.free(active_path);
+    if (try filesEqual(allocator, path, active_path)) return false;
+
+    try registry.backupAuthIfChanged(allocator, codex_home, active_path, path);
+    try registry.copyFile(path, active_path);
     return true;
+}
+
+fn filesEqual(allocator: std.mem.Allocator, lhs: []const u8, rhs: []const u8) !bool {
+    const left_bytes = try readFileIfExistsAlloc(allocator, lhs);
+    defer if (left_bytes) |value| allocator.free(value);
+    if (left_bytes == null) return false;
+    const right_bytes = try readFileIfExistsAlloc(allocator, rhs);
+    defer if (right_bytes) |value| allocator.free(value);
+    if (right_bytes == null) return false;
+    return std.mem.eql(u8, left_bytes.?, right_bytes.?);
+}
+
+fn readFileIfExistsAlloc(allocator: std.mem.Allocator, path: []const u8) !?[]u8 {
+    var file = std.fs.cwd().openFile(path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return null,
+        else => return err,
+    };
+    defer file.close();
+    return file.readToEndAlloc(allocator, max_auth_file_size_bytes);
 }
 
 fn daemonCycle(allocator: std.mem.Allocator, codex_home: []const u8) !bool {

@@ -39,6 +39,8 @@ This document describes how `codex-auth` stores accounts, synchronizes auth file
 - `~/.codex/accounts/registry.json.bak.YYYYMMDD-hhmmss[.N]`
 - `~/.codex/sessions/...`
 
+Account switching and provider configuration only touch `auth.json` and `accounts/registry.json` (plus their backups). They do not rewrite Codex settings files or chat history/session files.
+
 `codex-auth` resolves `codex_home` from the real user home directory:
 
 1. `HOME/.codex`
@@ -210,6 +212,7 @@ When enabled:
    - `5h` remaining `< auto_switch.threshold_5h_percent` (default `10%`)
    - `weekly` remaining `< auto_switch.threshold_weekly_percent` (default `5%`)
    - on Linux/WSL, the timer-triggered service writes a user-service journal line with the source and destination emails when an automatic switch happens
+   If no better subscription account is available and environment variable `CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH` points to an auth file containing `OPENAI_API_KEY`, auto-switch copies that fallback auth file to `~/.codex/auth.json`.
 4. Candidate scoring is reset-aware:
    - if `resets_at <= now`, that window is treated as fully reset (`100%`)
    - if both 5h and weekly are known, the candidate score is the lower remaining value
@@ -246,7 +249,11 @@ Usage refresh is active-account-only and depends on `api.usage`:
 1. If `api.usage = true`, try only the ChatGPT usage API with the current active `~/.codex/auth.json`.
 2. If `api.usage = false`, read only the newest `~/.codex/sessions/**/rollout-*.jsonl` file by `mtime`.
 
-- ChatGPT API refresh sends `Authorization: Bearer <tokens.access_token>` and `ChatGPT-Account-Id: <chatgpt_account_id>` to `https://chatgpt.com/backend-api/wham/usage`.
+- ChatGPT API refresh sends `Authorization: Bearer <tokens.access_token>` and `ChatGPT-Account-Id: <chatgpt_account_id>` to the configured usage endpoint.
+- By default the primary endpoint is `https://chatgpt.com/backend-api/wham/usage`.
+- You can override the primary endpoint with environment variable `CODEX_AUTH_USAGE_API_ENDPOINT` (must be a valid `https://` URL with a host).
+- You can also set `CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT` (same URL validation). When present and different from primary, API refresh tries primary first, then automatically retries fallback when the primary request fails or returns no usable usage windows.
+- You can set `CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH` to an API-key auth file path. This path is only used by background auto-switch after subscription quota checks fail to find a better subscription account.
 - API refresh only updates the current active account. Other accounts keep their stored historical snapshots until they become active.
 - API refresh writes a new snapshot only when the fetched snapshot differs from the stored one; unchanged API responses do not rewrite `registry.json`.
 - In API-only mode, API failures do not overwrite the stored usage snapshot and do not fall back to local rollout files.
