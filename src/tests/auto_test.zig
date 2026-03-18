@@ -215,6 +215,99 @@ test "Scenario: Given better candidate when auto switch runs then auth and activ
     try std.testing.expect(std.mem.eql(u8, active_data, fresh_auth));
 }
 
+test "Scenario: Given no better subscription account and api-key fallback auth when auto switch runs then active auth falls back to api-key provider" {
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+    try tmp.dir.makePath("accounts");
+
+    var reg = bdd.makeEmptyRegistry();
+    defer reg.deinit(gpa);
+    reg.auto_switch.enabled = true;
+
+    try appendAccountWithUsage(gpa, &reg, "low@example.com", .{
+        .primary = .{ .used_percent = 98.0, .window_minutes = 300, .resets_at = null },
+        .secondary = .{ .used_percent = 96.0, .window_minutes = 10080, .resets_at = null },
+        .credits = null,
+        .plan_type = null,
+    }, 100);
+    const low_account_id = try bdd.accountKeyForEmailAlloc(gpa, "low@example.com");
+    defer gpa.free(low_account_id);
+    try registry.setActiveAccountKey(gpa, &reg, low_account_id);
+
+    const low_auth = try bdd.authJsonWithEmailPlan(gpa, "low@example.com", "pro");
+    defer gpa.free(low_auth);
+    const fallback_auth = "{\"OPENAI_API_KEY\":\"sk-test\"}";
+
+    const low_path = try registry.accountAuthPath(gpa, codex_home, low_account_id);
+    defer gpa.free(low_path);
+    const active_path = try registry.activeAuthPath(gpa, codex_home);
+    defer gpa.free(active_path);
+    const fallback_path = try std.fs.path.join(gpa, &[_][]const u8{ codex_home, "accounts", "apikey-fallback.auth.json" });
+    defer gpa.free(fallback_path);
+
+    try std.fs.cwd().writeFile(.{ .sub_path = low_path, .data = low_auth });
+    try std.fs.cwd().writeFile(.{ .sub_path = active_path, .data = low_auth });
+    try std.fs.cwd().writeFile(.{ .sub_path = fallback_path, .data = fallback_auth });
+
+    try std.testing.expect(try auto.maybeAutoSwitchWithApiKeyFallbackPath(gpa, codex_home, &reg, fallback_path));
+
+    const active_data = try bdd.readFileAlloc(gpa, active_path);
+    defer gpa.free(active_data);
+    try std.testing.expectEqualStrings(fallback_auth, active_data);
+    try std.testing.expect(reg.active_account_key != null);
+    try std.testing.expect(std.mem.eql(u8, reg.active_account_key.?, low_account_id));
+}
+
+test "Scenario: Given fallback auth path without api key when auto switch runs then fallback is ignored" {
+    const gpa = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const codex_home = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(codex_home);
+    try tmp.dir.makePath("accounts");
+
+    var reg = bdd.makeEmptyRegistry();
+    defer reg.deinit(gpa);
+    reg.auto_switch.enabled = true;
+
+    try appendAccountWithUsage(gpa, &reg, "low@example.com", .{
+        .primary = .{ .used_percent = 98.0, .window_minutes = 300, .resets_at = null },
+        .secondary = .{ .used_percent = 96.0, .window_minutes = 10080, .resets_at = null },
+        .credits = null,
+        .plan_type = null,
+    }, 100);
+    const low_account_id = try bdd.accountKeyForEmailAlloc(gpa, "low@example.com");
+    defer gpa.free(low_account_id);
+    try registry.setActiveAccountKey(gpa, &reg, low_account_id);
+
+    const low_auth = try bdd.authJsonWithEmailPlan(gpa, "low@example.com", "pro");
+    defer gpa.free(low_auth);
+    const fallback_auth = try bdd.authJsonWithEmailPlan(gpa, "other@example.com", "pro");
+    defer gpa.free(fallback_auth);
+
+    const low_path = try registry.accountAuthPath(gpa, codex_home, low_account_id);
+    defer gpa.free(low_path);
+    const active_path = try registry.activeAuthPath(gpa, codex_home);
+    defer gpa.free(active_path);
+    const fallback_path = try std.fs.path.join(gpa, &[_][]const u8{ codex_home, "accounts", "not-apikey.auth.json" });
+    defer gpa.free(fallback_path);
+
+    try std.fs.cwd().writeFile(.{ .sub_path = low_path, .data = low_auth });
+    try std.fs.cwd().writeFile(.{ .sub_path = active_path, .data = low_auth });
+    try std.fs.cwd().writeFile(.{ .sub_path = fallback_path, .data = fallback_auth });
+
+    try std.testing.expect(!(try auto.maybeAutoSwitchWithApiKeyFallbackPath(gpa, codex_home, &reg, fallback_path)));
+
+    const active_data = try bdd.readFileAlloc(gpa, active_path);
+    defer gpa.free(active_data);
+    try std.testing.expectEqualStrings(low_auth, active_data);
+}
+
 test "Scenario: Given linux service unit when rendering then oneshot daemon command is included" {
     const gpa = std.testing.allocator;
     const unit = try auto.linuxUnitText(gpa, "/tmp/codex-auth", "/tmp/custom-codex-home");

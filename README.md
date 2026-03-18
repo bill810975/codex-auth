@@ -209,6 +209,18 @@ Use pure local rollout refresh without any API calls:
 codex-auth config api disable
 ```
 
+Use subscription accounts first, and when auto-switch cannot find any better subscription account, fall back to an API-key provider auth file:
+
+```shell
+CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH="$HOME/.codex/accounts/apikey-fallback.auth.json" codex-auth config auto enable
+```
+
+Fallback auth file example:
+
+```json
+{"OPENAI_API_KEY":"sk-..."}
+```
+
 Use a third-party OpenAI-compatible usage API provider endpoint:
 
 ```shell
@@ -226,6 +238,7 @@ Notes:
 - The endpoint must be a valid `https://` URL with a host and return an OpenAI-compatible usage payload.
 - If the variable is unset (or empty), `codex-auth` uses the default OpenAI endpoint.
 - `CODEX_AUTH_USAGE_API_FALLBACK_ENDPOINT` is optional. When set, `codex-auth` still tries the primary endpoint first, then tries the fallback endpoint only when the primary request fails or returns no usable windows.
+- `CODEX_AUTH_APIKEY_FALLBACK_AUTH_PATH` is optional. It is only used by background auto-switching after quota checks decide the active subscription account should switch, but no better subscription account is available.
 - This only changes where usage refresh requests are sent. It does not rewrite Codex app settings or chat history files.
 
 When auto-switching is enabled, a background worker refreshes the active account's usage from the configured source and silently switches accounts when:
@@ -279,3 +292,6 @@ This project is provided as-is and use is at your own risk.
 
 **API Call Declaration:**
 By enabling API-based usage refresh, this tool will send your ChatGPT access token to the configured usage endpoint to fetch current quota information. By default this endpoint is `https://chatgpt.com/backend-api/wham/usage`, and you can override it with `CODEX_AUTH_USAGE_API_ENDPOINT`. This behavior may be detected by the provider and could violate their terms of service, potentially leading to account suspension or other risks. The decision to use this feature and any resulting consequences are entirely yours.
+
+**Chat History Note:**
+`codex-auth` does not rewrite Codex settings files and does not delete `~/.codex/sessions/*` history files. Switching accounts (or falling back to an API-key auth file) only updates `~/.codex/auth.json` and `~/.codex/accounts/registry.json` with backups.
