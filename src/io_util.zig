@@ -17,5 +17,8 @@ fn getStdoutFile() std.fs.File {
     if (@hasDecl(std.fs.File, "stdout")) {
         return std.fs.File.stdout();
     }
-    return @field(std, "io").getStdOut();
+    if (@hasDecl(std, "io") and @hasDecl(std.io, "getStdOut")) {
+        return std.io.getStdOut();
+    }
+    @compileError("No supported stdout API found in this Zig stdlib version");
 }
